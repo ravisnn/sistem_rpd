@@ -73,11 +73,7 @@ class RencanaKegiatanController extends Controller
         $rencanaAll = $rencanaAllQuery->get();
         $uraians = Uraian::orderBy('kode')->get();
         // Ambil semua kegiatan unik dan urutkan ascending untuk filter dropdown
-        $kegiatanOptions = RencanaKegiatan::select('kegiatan')
-            ->whereYear('created_at', $tahun)
-            ->distinct()
-            ->orderBy('kegiatan', 'asc')
-            ->pluck('kegiatan');
+        $kegiatanOptions = Kegiatan::orderBy('kode')->pluck('kode');
         $kegiatanFilter = request('kegiatan', '');
         $outputFilter = request('output', '');
         // rencanaAll: seluruh data tanpa filter kegiatan/output

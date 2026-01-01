@@ -258,7 +258,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Note: intentionally do NOT apply page-level filters here —
             // validations should consult the full dataset for the selected year.
         } else {
-            existingRows = Array.from(tableBody.querySelectorAll('tr'));
+            existingRows = Array.from(tableBody.querySelectorAll('tr[data-id_rencana]'));
         }
 
 
@@ -268,6 +268,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const isHardDuplicate = existingRows.some(row => {
             const rowId = row.getAttribute('data-id_rencana');
             if (editId && String(rowId).trim() === String(editId).trim()) return false;
+
+            if (!row.children || row.children.length < 9) return false;
 
             const rowKegiatan = row.children[1].innerText;
             const rowOutput = row.children[2].innerText;
