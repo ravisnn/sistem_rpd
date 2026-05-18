@@ -398,7 +398,20 @@ class RencanaKegiatanController extends Controller
     public function destroy($id)
     {
         $rencana = RencanaKegiatan::findOrFail($id);
-        $rencana->delete();
+        $tahun = date('Y', strtotime($rencana->created_at));
+
+        
+        DB::transaction(function () use ($rencana, $tahun) {
+            // Hapus semua realisasi yang memiliki kombinasi kegiatan, akun_id, uraian_id, dan tahun yang sama.
+            \App\Models\Realisasi::where('kegiatan', $rencana->kegiatan)
+                ->where('akun_id', $rencana->akun_id)
+                ->where('uraian_id', $rencana->uraian_id)
+                ->whereYear('created_at', $tahun)
+                ->delete();
+
+            $rencana->delete();
+        });
+
         return response()->json(['success' => true]);
     }
 
