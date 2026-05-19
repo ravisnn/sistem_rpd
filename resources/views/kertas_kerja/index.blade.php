@@ -303,10 +303,81 @@
                                 $outputRendered = $kegiatanRendered = $komponenRendered = $jenisBelanjaRendered = $akunRendered = $unitKerjaRendered = [];
                             @endphp
                             @php
-                                // Sort data by kegiatan then output
-                                $sortedData = collect($data)
-                                    ->sortBy([['kegiatan', 'asc'], ['output', 'asc']])
-                                    ->values();
+                            // GROUPING DATA AGAR KOMPONEN + AKUN YANG SAMA DIGABUNG
+                            $groupedData = [];
+
+                            foreach ($data as $row) {
+
+                                $key =
+                                    trim($row['kegiatan']) . '|' .
+                                    trim($row['output']) . '|' .
+                                    trim($row['komponen']) . '|' .
+                                    trim($row['akun_kode']);
+
+                                if (!isset($groupedData[$key])) {
+
+                                    $groupedData[$key] = $row;
+
+                                } else {
+
+                                    // gabungkan pagu
+                                    $groupedData[$key]['pagu'] =
+                                        ($groupedData[$key]['pagu'] ?? 0)
+                                        + ($row['pagu'] ?? 0);
+
+                                    // gabungkan RPD dan realisasi per bulan
+                                    foreach ([
+                                        'jan','feb','mar','apr','mei','jun',
+                                        'jul','agt','sep','okt','nov','des'
+                                    ] as $m) {
+
+                                        $groupedData[$key]['rpd'][$m] =
+                                            ($groupedData[$key]['rpd'][$m] ?? 0)
+                                            + ($row['rpd'][$m] ?? 0);
+
+                                        $groupedData[$key]['realisasi'][$m] =
+                                            ($groupedData[$key]['realisasi'][$m] ?? 0)
+                                            + ($row['realisasi'][$m] ?? 0);
+                                    }
+                                }
+                            }
+
+                            // sorting hasil grouping
+                            $sortedData = collect($groupedData)
+                                ->sortBy([
+                                    ['kegiatan', 'asc'],
+                                    ['output', 'asc'],
+                                    ['komponen', 'asc'],
+                                    ['akun_kode', 'asc']
+                                ])
+                                ->values();
+
+                            // Hitung kombinasi unik kegiatan+output dan mapping baris
+                            $comboCounts = [];
+                            $akunByCombo = [];
+
+                            foreach ($sortedData as $row) {
+
+                                $key = $row['kegiatan'] . '|' . $row['output'];
+
+                                if (!isset($comboCounts[$key])) {
+                                    $comboCounts[$key] = 0;
+                                }
+
+                                $comboCounts[$key]++;
+
+                                if (!isset($akunByCombo[$key])) {
+                                    $akunByCombo[$key] = [];
+                                }
+
+                                if (!in_array($row['akun_kode'], $akunByCombo[$key])) {
+                                    $akunByCombo[$key][] = $row['akun_kode'];
+                                }
+                            }
+
+                            $renderedCombo = [];
+                            @endphp
+                            @php
                                 // Hitung kombinasi unik kegiatan+output dan mapping baris
                                 $comboCounts = [];
                                 $akunByCombo = [];
@@ -365,7 +436,7 @@
                                             ];
                                         }
                                     }
-                                    $paguVal = $row['total_pagu_output_akun'] ?? ($row['pagu'] ?? 0);
+                                    $paguVal = $row['pagu'] ?? 0;
                                     $rpdVal = array_sum($row['rpd'] ?? []);
                                     $realisasiVal = array_sum($row['realisasi'] ?? []);
                                     $selisihVal = $paguVal - $rpdVal; // selisih summary = Pagu - RPD
@@ -397,7 +468,7 @@
                                             <td rowspan="{{ $comboCounts[$key] }}"
                                                 style="vertical-align:top; text-align:center; border:1px solid #000;">
                                                 {{ $row['kegiatan'] }}</td>
-                                            <td rowspan="{{ $comboCounts[$key] }}"`
+                                            <td rowspan="{{ $comboCounts[$key] }}"
                                                 style="vertical-align:top; text-align:center; border:1px solid #000;">
                                                 {{ $row['output'] }}</td>
                                             @php $renderedCombo[$key] = true; @endphp
@@ -412,7 +483,7 @@
                                             {{ $row['akun_kode'] }}</td>
                                         <td class="nominal-cell"
                                             style="vertical-align:top; text-align:right; border:1px solid #000;">
-                                            Rp {{ number_format($row['total_pagu_output_akun'] ?? 0) }}</td>
+                                            Rp {{ number_format($row['pagu'] ?? 0) }}</td>
                                         @foreach (['jan', 'feb', 'mar', 'apr', 'mei', 'jun', 'jul', 'agt', 'sep', 'okt', 'nov', 'des'] as $m)
                                             <td class="nominal-cell"
                                                 style="vertical-align:top; text-align:right; border:1px solid #000;">
@@ -528,8 +599,8 @@
                     $grandSelisih = 0;
 
                     foreach ($data as $row) {
-                        // Parent key unik
-                        $key = $row['kegiatan'] . '|' . $row['output'] . '|' . $row['akun_kode'];
+                        // Parent key unik termasuk komponen agar tiap komponen di akun yang sama tidak collapse
+                        $key = trim($row['kegiatan'] ?? '') . '|' . trim($row['output'] ?? '') . '|' . trim($row['akun_kode'] ?? '') . '|' . trim($row['komponen'] ?? '');
 
                         if (!isset($ringkasan[$key])) {
                             $ringkasan[$key] = [
@@ -546,12 +617,12 @@
                             ];
                         }
 
-                        // Ambil pagu
-                        $pagu = $row['total_pagu_output_akun'] ?? ($row['pagu'] ?? 0);
+                        // Ambil pagu per baris
+                        $pagu = $row['pagu'] ?? 0;
 
                         // Hitung total RPD & Realisasi 12 bulan
-                        $totalRpd = array_sum($row['rpd']);
-                        $totalRealisasi = array_sum($row['realisasi']);
+                        $totalRpd = array_sum($row['rpd'] ?? []);
+                        $totalRealisasi = array_sum($row['realisasi'] ?? []);
 
                         // ❗ Selisih baru = Pagu - RPD
                         $totalSelisih = $pagu - $totalRpd;
@@ -568,6 +639,15 @@
                         $grandRealisasi += $totalRealisasi;
                         $grandSelisih += $totalSelisih;
                     }
+
+                    // Urutkan ringkasan ascending berdasarkan kegiatan, output dan akun_id
+                    $ringkasan = collect($ringkasan)
+                        ->sortBy(function ($item) {
+                            return sprintf('%s|%s|%s|%s', $item['kegiatan'], $item['output'], $item['akun'], $item['komponen']);
+                        })
+                        ->values()
+                        ->all();
+
                     // Hitung rowspan
                     $rowspanData = [];
                     foreach ($ringkasan as $key => $item) {
@@ -595,12 +675,20 @@
                             $rowspanData['akun'][$kaKey] = 0;
                         }
                         $rowspanData['akun'][$kaKey]++;
+
+                        // ROWSPAN KOMPONEN untuk akun yang sama
+                        $komponenKey = $kaKey . '|' . $item['komponen'];
+                        if (!isset($rowspanData['komponen'][$komponenKey])) {
+                            $rowspanData['komponen'][$komponenKey] = 0;
+                        }
+                        $rowspanData['komponen'][$komponenKey]++;
                     }
 
                     // Penanda cell yang sudah ditampilkan
                     $printedKegiatan = [];
                     $printedOutput = [];
                     $printedAkun = [];
+                    $printedKomponen = [];
                 @endphp
                 <h2 style="margin-bottom:10px; text-align:center; font-weight:600; font-size:1.1rem">
                     Ringkasan Total RPD Per Kegiatan, Output & Sub Komponen
@@ -657,9 +745,14 @@
                                         @php $printedOutput[$outputKey] = true; @endphp
                                     @endif
 
-                                    {{-- tampilkan field dari $item (bukan $row) --}}
-                                    <td style="vertical-align:top; text-align:center; border:1px solid #000;">
-                                        {{ $item['komponen'] }}</td>
+                                    {{-- ROWSPAN KOMPONEN --}}
+                                    @php $komponenKey = $akunKey . '|' . $item['komponen']; @endphp
+                                    @if (!isset($printedKomponen[$komponenKey]))
+                                        <td rowspan="{{ $rowspanData['komponen'][$komponenKey] }}"
+                                            style="vertical-align:top; text-align:center; border:1px solid #000; padding:6px;">
+                                            {{ $item['komponen'] }}</td>
+                                        @php $printedKomponen[$komponenKey] = true; @endphp
+                                    @endif
                                     <td style="vertical-align:top; text-align:center; border:1px solid #000;">
                                         {{ $item['jenis_belanja'] ?? '-' }}</td>
                                     <td style="vertical-align:top; text-align:center; border:1px solid #000;">
@@ -781,7 +874,7 @@
                         if (!empty($unit)) $summary[$key]['bag_kelompok_substansi'][$unit] = true;
 
                         // pagu: prefer pre-aggregated keys when present
-                        $paguVal = $row['total_pagu_output_akun'] ?? $row['total_pagu_akun'] ?? $row['pagu'] ?? 0;
+$paguVal = $row['pagu'] ?? 0;
                         $summary[$key]['pagu'] += (int)$paguVal;
 
                         // rpd and realisasi are arrays per month in $row
@@ -856,7 +949,7 @@
         $unit = $row['unit_kerja'] ?? '-';
         if (!empty($unit)) $monitor[$key]['bag_kelompok_substansi'][$unit] = true;
 
-        $paguVal = $row['total_pagu_output_akun'] ?? $row['total_pagu_akun'] ?? $row['pagu'] ?? 0;
+        $paguVal = $row['pagu'] ?? 0;
         $monitor[$key]['pagu'] += (int)$paguVal;
 
         foreach ($months as $m) {
@@ -885,7 +978,7 @@
     foreach ($data as $row) {
         $unit = strtolower(trim($row['unit_kerja'] ?? ''));
         $isUmum = ($unit === '' || $unit === 'umum');
-        $paguVal = $row['total_pagu_output_akun'] ?? $row['total_pagu_akun'] ?? $row['pagu'] ?? 0;
+        $paguVal = $row['pagu'] ?? 0;
         if ($isUmum) {
             $umum['pagu'] += (int)$paguVal;
         }
