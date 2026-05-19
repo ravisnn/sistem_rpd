@@ -68,6 +68,7 @@ class KertasKerjaController extends Controller
 
         // Hitung total realisasi per output-kegiatan-akun per bulan
         $totalRealisasiPerOutputKegiatanAkun = [];
+        $perRowRealisasi = [];
         $allRealisasi = \App\Models\Realisasi::with(['akun'])
             ->whereYear('created_at', $tahunAktif)
             ->when($outputFilter, fn($q) => $q->where('output', $outputFilter))
@@ -87,26 +88,36 @@ class KertasKerjaController extends Controller
             foreach(['jan','feb','mar','apr','mei','jun','jul','agt','sep','okt','nov','des'] as $m) {
                 $totalRealisasiPerOutputKegiatanAkun[$key][$m] += $item->$m;
             }
+
+            $rowKey = $output . '|' . $kegiatan . '|' . $akunKode . '|' . ($item->komponen ?? '') . '|' . ($item->uraian_id ?? '');
+            if (!isset($perRowRealisasi[$rowKey])) {
+                $perRowRealisasi[$rowKey] = [
+                    'jan' => 0, 'feb' => 0, 'mar' => 0, 'apr' => 0, 'mei' => 0, 'jun' => 0,
+                    'jul' => 0, 'agt' => 0, 'sep' => 0, 'okt' => 0, 'nov' => 0, 'des' => 0
+                ];
+            }
+            foreach(['jan','feb','mar','apr','mei','jun','jul','agt','sep','okt','nov','des'] as $m) {
+                $perRowRealisasi[$rowKey][$m] += $item->$m;
+            }
         }
-        // Build one mapped row per (output|kegiatan|akun) combination to avoid
-        // duplicate rows and ensure pagu/rpd/realisasi are the aggregated values.
-        $comboIndex = [];
+
+        $mappedData = [];
         foreach ($allData as $item) {
             $akunKode = $item->akun->kode ?? '-';
             $output = $item->output ?? '-';
             $kegiatan = $item->kegiatan ?? '-';
-            $comboKey = $output . '|' . $kegiatan . '|' . $akunKode;
-            if (!isset($comboIndex[$comboKey])) {
-                // store first encountered item as representative for this combo
-                $comboIndex[$comboKey] = $item;
-            }
-        }
-        $mappedData = [];
-        foreach ($comboIndex as $comboKey => $item) {
-            $akunKode = $item->akun->kode ?? '-';
-            $output = $item->output ?? '-';
-            $kegiatan = $item->kegiatan ?? '-';
             $key = $output . '|' . $kegiatan . '|' . $akunKode;
+            $rowKey = $output . '|' . $kegiatan . '|' . $akunKode . '|' . ($item->komponen ?? '') . '|' . ($item->uraian_id ?? '');
+            $rowRpd = [
+                'jan' => $item->jan ?? 0, 'feb' => $item->feb ?? 0, 'mar' => $item->mar ?? 0, 'apr' => $item->apr ?? 0,
+                'mei' => $item->mei ?? 0, 'jun' => $item->jun ?? 0, 'jul' => $item->jul ?? 0, 'agt' => $item->agt ?? 0,
+                'sep' => $item->sep ?? 0, 'okt' => $item->okt ?? 0, 'nov' => $item->nov ?? 0, 'des' => $item->des ?? 0,
+            ];
+            $realisasiRow = $perRowRealisasi[$rowKey] ?? [
+                'jan' => 0, 'feb' => 0, 'mar' => 0, 'apr' => 0, 'mei' => 0, 'jun' => 0,
+                'jul' => 0, 'agt' => 0, 'sep' => 0, 'okt' => 0, 'nov' => 0, 'des' => 0,
+            ];
+
             $mappedData[] = [
                 'kegiatan' => $kegiatan,
                 'output' => $output,
@@ -114,19 +125,12 @@ class KertasKerjaController extends Controller
                 'jenis_belanja' => $item->jenis_belanja ?? '-',
                 'unit_kerja' => $item->unit_kerja ?? '-',
                 'akun_kode' => $akunKode,
-                // pagu is the total for this output-kegiatan-akun combination
-                'pagu' => $totalPaguOutputKegiatanAkun[$key] ?? ($item->target ?? 0),
+                'pagu' => $item->target ?? 0,
                 'total_pagu_output_akun' => $totalPaguOutputKegiatanAkun[$key] ?? ($item->target ?? 0),
-                'rpd' => $totalRpdPerOutputKegiatanAkun[$key] ?? [
-                    'jan' => 0,'feb' => 0,'mar' => 0,'apr' => 0,'mei' => 0,'jun' => 0,
-                    'jul' => 0,'agt' => 0,'sep' => 0,'okt' => 0,'nov' => 0,'des' => 0
-                ],
-                'realisasi' => $totalRealisasiPerOutputKegiatanAkun[$key] ?? [
-                    'jan' => 0,'feb' => 0,'mar' => 0,'apr' => 0,'mei' => 0,'jun' => 0,
-                    'jul' => 0,'agt' => 0,'sep' => 0,'okt' => 0,'nov' => 0,'des' => 0
-                ],
-                'total_rpd' => array_sum($totalRpdPerOutputKegiatanAkun[$key] ?? []),
-                'total_realisasi' => array_sum($totalRealisasiPerOutputKegiatanAkun[$key] ?? []),
+                'rpd' => $rowRpd,
+                'realisasi' => $realisasiRow,
+                'total_rpd' => array_sum($rowRpd),
+                'total_realisasi' => array_sum($realisasiRow),
             ];
         }
         // Hitung total RPD per bulan per output dan akun
